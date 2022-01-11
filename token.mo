@@ -138,6 +138,19 @@ actor class Canister(init_minter: Principal) = this {
 		if (ExtCore.TokenIdentifier.isPrincipal(tokenid, Principal.fromActor(this)) == false) {
 			return #err(#InvalidToken(tokenid));
 		};
+    var c : Nat = 0;
+    var failed : Bool = true;
+    while(c < 29) {
+      if (failed) {
+        if (subaccount[c] > 0) { 
+          failed := false;
+        };
+      };
+      c += 1;
+    };
+    if (failed) {
+      return #err(#Other("Invalid subaccount"));
+    };
 		if (subaccount.size() != 32) {
 			return #err(#Other("Wrong subaccount"));				
 		};
