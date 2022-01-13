@@ -495,7 +495,7 @@ actor class Canister(init_minter: Principal) = this {
       };
     };
 	};
-  public query func supply(token : TokenIdentifier) : async Result.Result<Balance, CommonError> {
+  public query func supply() : async Result.Result<Balance, CommonError> {
     #ok(_supply);
   };
   public query func getRegistry() : async [(TokenIndex, AccountIdentifier)] {
