@@ -407,6 +407,134 @@ actor class Canister(init_minter: Principal) = this {
         ignore(settle(ExtCore.TokenIdentifier.fromPrincipal(Principal.fromActor(this), settlement.0)));
     };
   };
+  
+  //Cap
+  func _capAddTransfer(token : TokenIndex, from : AccountIdentifier, to : AccountIdentifier) : () {
+    let event : CapIndefiniteEvent = {
+      operation = "transfer";
+      details = [
+        ("to", #Text(to)),
+        ("from", #Text(from)),
+        ("token", #Text(ExtCore.TokenIdentifier.fromPrincipal(Principal.fromActor(this), token))),
+        ("balance", #U64(1)),
+      ];
+      caller = Principal.fromActor(this);
+    };
+    _capAdd(event);
+  };
+  func _capAddSale(token : TokenIndex, from : AccountIdentifier, to : AccountIdentifier, amount : Nat64) : () {
+    let event : CapIndefiniteEvent = {
+      operation = "sale";
+      details = [
+        ("to", #Text(to)),
+        ("from", #Text(from)),
+        ("token", #Text(ExtCore.TokenIdentifier.fromPrincipal(Principal.fromActor(this), token))),
+        ("balance", #U64(1)),
+        ("price_decimals", #U64(8)),
+        ("price_currency", #Text("ICP")),
+        ("price", #U64(amount)),
+      ];
+      caller = Principal.fromActor(this);
+    };
+    _capAdd(event);
+  };
+  func _capAddMint(token : TokenIndex, from : AccountIdentifier, to : AccountIdentifier, amount : ?Nat64) : () {
+    let event : CapIndefiniteEvent = switch(amount) {
+      case(?a) {
+        {
+          operation = "mint";
+          details = [
+            ("to", #Text(to)),
+            ("from", #Text(from)),
+            ("token", #Text(ExtCore.TokenIdentifier.fromPrincipal(Principal.fromActor(this), token))),
+            ("balance", #U64(1)),
+            ("price_decimals", #U64(8)),
+            ("price_currency", #Text("ICP")),
+            ("price", #U64(a)),
+          ];
+          caller = Principal.fromActor(this);
+        };
+      };
+      case(_) {
+        {
+          operation = "mint";
+          details = [
+            ("to", #Text(to)),
+            ("from", #Text(from)),
+            ("token", #Text(ExtCore.TokenIdentifier.fromPrincipal(Principal.fromActor(this), token))),
+            ("balance", #U64(1)),
+          ];
+          caller = Principal.fromActor(this);
+        };
+      };
+    };
+    _capAdd(event);
+  };
+  func _capAdd(event : CapIndefiniteEvent) : () {
+    _capEvents := List.push(event, _capEvents);
+  };
+  public shared(msg) func cronCapEvents() : async () {
+    var _cont : Bool = true;
+    while(_cont){
+      var last = List.pop(_capEvents);
+      switch(last.0){
+        case(?event) {
+          _capEvents := last.1;
+          try {
+            ignore await CapService.insert(event);
+          } catch (e) {
+            _capEvents := List.push(event, _capEvents);
+          };
+        };
+        case(_) {
+          _cont := false;
+        };
+      };
+    };
+  };
+  public shared(msg) func initCap() : async () {
+    if (Option.isNull(capRootBucketId)){
+      try {
+        capRootBucketId := await CapService.handshake(Principal.toText(Principal.fromActor(this)), 1_000_000_000_000);
+      } catch e {};
+    };
+  };
+  private stable var historicExportHasRun : Bool = false;
+  public shared(msg) func historicExport() : async Bool {
+    if (historicExportHasRun == false){
+      var events : [CapEvent] = [];
+      for(tx in _transactions.vals()){
+        let event : CapEvent = {
+          time = Int64.toNat64(Int64.fromInt(tx.time));
+          operation = "sale";
+          details = [
+            ("to", #Text(tx.buyer)),
+            ("from", #Text(Principal.toText(tx.seller))),
+            ("token", #Text(tx.token)),
+            ("balance", #U64(1)),
+            ("price_decimals", #U64(8)),
+            ("price_currency", #Text("ICP")),
+            ("price", #U64(tx.price)),
+          ];
+          caller = Principal.fromActor(this);
+        };
+        events := Array.append(events, [event]);
+      };
+      try {
+        ignore(await CapService.migrate(events));
+        historicExportHasRun := true;        
+      } catch (e) {};
+    };
+    historicExportHasRun;
+  };
+  public shared(msg) func adminKillHeartbeat() : async () {
+    assert(msg.caller == _minter);
+    _runHeartbeat := false;
+  };
+  public shared(msg) func adminStartHeartbeat() : async () {
+    assert(msg.caller == _minter);
+    _runHeartbeat := true;
+  };
 
 	public shared(msg) func setMinter(minter : Principal) : async () {
 		assert(msg.caller == _minter);
@@ -969,134 +1097,6 @@ actor class Canister(init_minter: Principal) = this {
   };
   public query func availableCycles() : async Nat {
     return Cycles.balance();
-  };
-  
-  //Cap
-  func _capAddTransfer(token : TokenIndex, from : AccountIdentifier, to : AccountIdentifier) : () {
-    let event : CapIndefiniteEvent = {
-      operation = "transfer";
-      details = [
-        ("to", #Text(to)),
-        ("from", #Text(from)),
-        ("token", #Text(ExtCore.TokenIdentifier.fromPrincipal(Principal.fromActor(this), token))),
-        ("balance", #U64(1)),
-      ];
-      caller = Principal.fromActor(this);
-    };
-    _capAdd(event);
-  };
-  func _capAddSale(token : TokenIndex, from : AccountIdentifier, to : AccountIdentifier, amount : Nat64) : () {
-    let event : CapIndefiniteEvent = {
-      operation = "sale";
-      details = [
-        ("to", #Text(to)),
-        ("from", #Text(from)),
-        ("token", #Text(ExtCore.TokenIdentifier.fromPrincipal(Principal.fromActor(this), token))),
-        ("balance", #U64(1)),
-        ("price_decimals", #U64(8)),
-        ("price_currency", #Text("ICP")),
-        ("price", #U64(amount)),
-      ];
-      caller = Principal.fromActor(this);
-    };
-    _capAdd(event);
-  };
-  func _capAddMint(token : TokenIndex, from : AccountIdentifier, to : AccountIdentifier, amount : ?Nat64) : () {
-    let event : CapIndefiniteEvent = switch(amount) {
-      case(?a) {
-        {
-          operation = "mint";
-          details = [
-            ("to", #Text(to)),
-            ("from", #Text(from)),
-            ("token", #Text(ExtCore.TokenIdentifier.fromPrincipal(Principal.fromActor(this), token))),
-            ("balance", #U64(1)),
-            ("price_decimals", #U64(8)),
-            ("price_currency", #Text("ICP")),
-            ("price", #U64(a)),
-          ];
-          caller = Principal.fromActor(this);
-        };
-      };
-      case(_) {
-        {
-          operation = "mint";
-          details = [
-            ("to", #Text(to)),
-            ("from", #Text(from)),
-            ("token", #Text(ExtCore.TokenIdentifier.fromPrincipal(Principal.fromActor(this), token))),
-            ("balance", #U64(1)),
-          ];
-          caller = Principal.fromActor(this);
-        };
-      };
-    };
-    _capAdd(event);
-  };
-  func _capAdd(event : CapIndefiniteEvent) : () {
-    _capEvents := List.push(event, _capEvents);
-  };
-  public shared(msg) func cronCapEvents() : async () {
-    var _cont : Bool = true;
-    while(_cont){
-      var last = List.pop(_capEvents);
-      switch(last.0){
-        case(?event) {
-          _capEvents := last.1;
-          try {
-            ignore await CapService.insert(event);
-          } catch (e) {
-            _capEvents := List.push(event, _capEvents);
-          };
-        };
-        case(_) {
-          _cont := false;
-        };
-      };
-    };
-  };
-  public shared(msg) func initCap() : async () {
-    if (Option.isNull(capRootBucketId)){
-      try {
-        capRootBucketId := await CapService.handshake(Principal.toText(Principal.fromActor(this)), 1_000_000_000_000);
-      } catch e {};
-    };
-  };
-  private stable var historicExportHasRun : Bool = false;
-  public shared(msg) func historicExport() : async Bool {
-    if (historicExportHasRun == false){
-      var events : [CapEvent] = [];
-      for(tx in _transactions.vals()){
-        let event : CapEvent = {
-          time = Int64.toNat64(Int64.fromInt(tx.time));
-          operation = "sale";
-          details = [
-            ("to", #Text(tx.buyer)),
-            ("from", #Text(Principal.toText(tx.seller))),
-            ("token", #Text(tx.token)),
-            ("balance", #U64(1)),
-            ("price_decimals", #U64(8)),
-            ("price_currency", #Text("ICP")),
-            ("price", #U64(tx.price)),
-          ];
-          caller = Principal.fromActor(this);
-        };
-        events := Array.append(events, [event]);
-      };
-      try {
-        ignore(await CapService.migrate(events));
-        historicExportHasRun := true;        
-      } catch (e) {};
-    };
-    historicExportHasRun;
-  };
-  public shared(msg) func adminKillHeartbeat() : async () {
-    assert(msg.caller == _minter);
-    _runHeartbeat := false;
-  };
-  public shared(msg) func adminStartHeartbeat() : async () {
-    assert(msg.caller == _minter);
-    _runHeartbeat := true;
   };
   
   //Private
