@@ -1063,7 +1063,7 @@ actor class Canister(init_minter: Principal) = this {
     };
   };
   private stable var historicExportHasRun : Bool = false;
-  public shared(msg) func historicExport() : async () {
+  public shared(msg) func historicExport() : async Bool {
     if (historicExportHasRun == false){
       var events : [CapEvent] = [];
       for(tx in _transactions.vals()){
@@ -1083,9 +1083,12 @@ actor class Canister(init_minter: Principal) = this {
         };
         events := Array.append(events, [event]);
       };
-      ignore(await CapService.migrate(events));
-      historicExportHasRun := true;
+      try {
+        ignore(await CapService.migrate(events));
+        historicExportHasRun := true;        
+      } catch (e) {};
     };
+    historicExportHasRun;
   };
   public shared(msg) func adminKillHeartbeat() : async () {
     assert(msg.caller == _minter);
