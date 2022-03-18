@@ -888,7 +888,7 @@ actor class Canister(init_minter: Principal) = this {
 
   type HttpStreamingStrategy = {
     #Callback: {
-        callback: query (HttpStreamingCallbackToken) -> async (HttpStreamingCallbackResponse);
+        callback: shared () -> async();
         token: HttpStreamingCallbackToken;
     };
   };
@@ -1013,6 +1013,9 @@ actor class Canister(init_minter: Principal) = this {
     return null;
   };
   private func _processFile(tokenid : TokenIdentifier, file : File) : HttpResponse {
+    let self: Principal = Principal.fromActor(this);
+    let canisterId: Text = Principal.toText(self);
+    let canister = actor (canisterId) : actor { http_request_streaming_callback : shared () -> async () };
     if (file.data.size() > 1 ) {
       let (payload, token) = _streamContent(tokenid, 0, file.data);
       return {
@@ -1021,7 +1024,7 @@ actor class Canister(init_minter: Principal) = this {
         body = payload;
         streaming_strategy = ?#Callback({
           token = Option.unwrap(token);
-          callback = http_request_streaming_callback;
+          callback = canister.http_request_streaming_callback;
         });
       };
     } else {
